@@ -1,7 +1,9 @@
 use std::fmt;
-use std::collections::HashMap;
-use std::any::Any;
 
+// internal stuff
+mod internal;
+
+// public API
 pub mod matchers;
 pub mod matchstate;
 pub use matchstate::MatcherState;
@@ -17,7 +19,6 @@ pub trait MatchState {
     fn captures(&self) -> usize;
     fn get_capture(&self, index: usize) -> Option<MatchCapture>;
     fn push_capture(&mut self, captured: MatchCapture);
-    fn get_ud(&mut self) -> &mut HashMap<String, Box<Any>>;
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -51,13 +52,16 @@ impl<'a, 'b> Next<'a, 'b> {
         self.next
     }
 
+    #[inline(always)] // no reason not to
     pub fn compare(&self, state: &mut MatchState) -> CompareResult {
-        self.element.compare_next(state, self.next)
+        self.element().compare_next(state, self.next())
     }
 }
 
 pub trait PatternElement : fmt::Display {
     fn compare(&self, state: &mut MatchState) -> CompareResult {
+        // TODO remove: use compare_next and handle_next instead (LLVM should be able to SCO this)
+        // altho we might remove handle_next in the future
         self.compare_next(state, None)
     }
 

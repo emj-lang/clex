@@ -29,6 +29,20 @@ impl Group {
 }
 
 impl PatternElement for Group {
+    fn compare(&self, state: &mut MatchState) -> CompareResult {
+        // TODO check
+        // NB: can be simplified by calling into a Slice element, as they have extremely similar code
+        let pos = state.pos();
+        if self.children.is_empty() {
+            state.push_capture(MatchCapture::Position(pos));
+            return CompareResult::Match(0)
+        } else {
+            let slice = Slice::new(&self.children[..], self.capture, pos, self.backmatch);
+            let result = slice.compare_next(state, None);
+            result
+        }
+    }
+
     fn compare_next(&self, state: &mut MatchState, next: Option<&Next>) -> CompareResult {
         // TODO check
         // NB: can be simplified by calling into a Slice element, as they have extremely similar code

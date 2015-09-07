@@ -1,19 +1,15 @@
-use std::collections::HashMap;
-use std::any::Any;
-
 use {MatchCapture, MatchState};
 
 #[derive(Debug)]
 pub struct MatcherState<'a> {
     pos: usize,
     data: &'a [u8],
-    captured: Vec<MatchCapture>,
-    userdata: HashMap<String, Box<Any>>,
+    captured: Vec<MatchCapture>
 }
 
 impl<'a> MatcherState<'a> {
     pub fn new(data: &'a [u8]) -> MatcherState<'a> {
-        MatcherState { pos: 0, data: data, captured: Vec::new(), userdata: HashMap::new() }
+        MatcherState { pos: 0, data: data, captured: Vec::new() }
     }
 }
 
@@ -69,9 +65,5 @@ impl<'a> MatchState for MatcherState<'a> {
 
     fn push_capture(&mut self, captured: MatchCapture) {
         self.captured.push(captured)
-    }
-
-    fn get_ud(&mut self) -> &mut HashMap<String, Box<Any>> {
-        &mut self.userdata
     }
 }

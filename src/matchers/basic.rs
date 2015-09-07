@@ -37,6 +37,8 @@ impl fmt::Display for Start {
 impl PatternElement for Start {
     fn compare(&self, state: &mut MatchState) -> CompareResult {
         let n = state.pos();
+        // TODO experiment with
+        // return n as isize;
         if n < isize::max_value() as usize {
             CompareResult::Match(n as isize)
         } else {
@@ -58,6 +60,8 @@ impl PatternElement for End {
     fn compare(&self, state: &mut MatchState) -> CompareResult {
         assert!(state.pos() <= state.max_pos());
         let n = state.max_pos() - state.pos();
+        // TODO experiment with
+        // return n as isize;
         if n < isize::max_value() as usize {
             CompareResult::Match(n as isize)
         } else {

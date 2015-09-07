@@ -2,6 +2,7 @@
 
 use std::fmt;
 use {PatternElement, MatchState, CompareResult, Next, MatchCapture};
+use internal;
 
 pub struct Slice<'a> {
     slice: &'a [Box<PatternElement>],
@@ -30,14 +31,16 @@ impl<'a> PatternElement for Slice<'a> {
     fn compare_next(&self, state: &mut MatchState, next: Option<&Next>) -> CompareResult {
         let mut result = CompareResult::Match(0);
         if self.slice.len() == 0 {
-            // TODO
             let pos = state.pos();
             if let Some(n) = next {
-                result = n.compare(state);
+                // our capture comes first
+                let mut proxy = internal::util::stateproxy::new(state);
+                if self.capture {
+                    proxy.push_capture(MatchCapture::Bytes { start: self.startpos, end: pos });
+                }
+                result = n.compare(&mut proxy);
                 if let CompareResult::Match(0) = result {
-                    if self.capture {
-                        state.push_capture(MatchCapture::Bytes { start: self.startpos, end: pos});
-                    }
+                    proxy.inject();
                 }
             } else {
                 if self.capture {
@@ -49,7 +52,12 @@ impl<'a> PatternElement for Slice<'a> {
             while let Some((i, c)) = iter.next() {
                 if c.handle_next() {
                     let slice = self.slice(i+1);
-                    let v = c.compare_next(state, Some(&Next::new(&slice, next)));
+                    let v;
+                    if let CompareResult::Match(0) = result {
+                        v = c.compare_next(state, Some(&Next::new(&slice, next)));
+                    } else {
+                        v = c.compare_next(&mut internal::util::stateproxy::new(state), Some(&Next::new(&slice, next)));
+                    }
                     match v {
                         CompareResult::Match(0) => {},
                         r => if self.backmatch { // last is most significant
@@ -77,7 +85,7 @@ impl<'a> PatternElement for Slice<'a> {
                     n.compare(state)
                 },
                 r => {
-                    //n.compare(state);
+                    n.compare(&mut internal::util::stateproxy::new(state));
                     r
                 },
             }

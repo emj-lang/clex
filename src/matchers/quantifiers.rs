@@ -4,8 +4,10 @@
 // TODO
 
 use std::fmt;
-use {PatternElement, MatchState, CompareResult};
+use {PatternElement, MatchState, CompareResult, Next};
+use internal;
 
+#[derive(Copy, Clone, Debug)]
 pub enum Quantification {
     Greedy,
     NonGreedy,
@@ -15,19 +17,19 @@ pub enum Quantification {
 pub struct Quantifier {
     quantification: Quantification,
     quantified: Box<PatternElement>,
-    next: Box<PatternElement>,
 }
 
 impl Quantifier {
-    pub fn new(quantification: Quantification, quantified: Box<PatternElement>, next: Box<PatternElement>) -> Quantifier {
-        Quantifier{quantification: quantification, quantified: quantified, next: next}
+    pub fn new(quantification: Quantification, quantified: Box<PatternElement>) -> Quantifier {
+        Quantifier { quantification: quantification, quantified: quantified }
     }
 }
 
 impl PatternElement for Quantifier {
-    fn compare(&self, state: &mut MatchState) -> CompareResult {
+    fn compare_next(&self, state: &mut MatchState, next: Option<&Next>) -> CompareResult {
         match self.quantification {
             Quantification::Greedy => { // TODO check
+                // TODO rewrite; this is wrong
                 match self.quantified.compare(state) {
                     CompareResult::Match(0) => {},
                     r => { return r }
@@ -40,43 +42,71 @@ impl PatternElement for Quantifier {
                         _ => { break },
                     }
                 }
-                let mut last = None;
+                let mut last = CompareResult::Match(0);
                 for backtrack in matched.iter().rev() {
                     state.set_pos(*backtrack);
-                    match self.next.compare(state) {
-                        CompareResult::Match(0) => { return CompareResult::Match(0) },
-                        r => { last = Some(r) },
+                    if let Some(n) = next {
+                        match n.compare(state) {
+                            CompareResult::Match(0) => { return CompareResult::Match(0) },
+                            r => { last = r },
+                        }
                     }
                 }
-                last.unwrap()
+                last
             },
             Quantification::NonGreedy => {
-                loop {
-                    match self.quantified.compare(state) {
-                        CompareResult::Match(0) => {
-                            let pos = state.pos();
-                            match self.next.compare(state) {
-                                CompareResult::Match(0) => { return CompareResult::Match(0) },
-                                _ => {},
-                            }
-                            state.set_pos(pos);
-                        },
-                        r => { return r },
+                // TODO test
+                if self.quantified.handle_next() {
+                    loop {
+                        match self.quantified.compare(state) {
+                            CompareResult::Match(0) if next.is_some() => {
+                                let pos = state.pos();
+                                match next.unwrap().compare(state) {
+                                    CompareResult::Match(0) => { return CompareResult::Match(0) },
+                                    _ => {},
+                                }
+                                state.set_pos(pos);
+                            },
+                            r => { return r },
+                        }
+                    }
+                } else {
+                    loop {
+                        match self.quantified.compare(state) {
+                            CompareResult::Match(0) if next.is_some() => {
+                                let pos = state.pos();
+                                match next.unwrap().compare(state) {
+                                    CompareResult::Match(0) => { return CompareResult::Match(0) },
+                                    _ => {},
+                                }
+                                state.set_pos(pos);
+                            },
+                            r => { return r },
+                        }
                     }
                 }
             },
             Quantification::Optional => {
+                // TODO test?
                 let start = state.pos();
-                match self.quantified.compare(state) {
-                    CompareResult::Match(0) => match self.next.compare(state) {
-                        r @ CompareResult::Match(0) => { return r; },
-                        _ => { state.set_pos(start); },
-                    },
-                    _ => { state.set_pos(start); }
+                let res;
+                {
+                    let mut proxy = internal::util::stateproxy::new(state);
+                    res = self.quantified.compare_next(&mut proxy, next);
+                    if let CompareResult::Match(0) = res {
+                        proxy.inject();
+                        return res;
+                    }
                 }
-                self.next.compare(state)
+                state.set_pos(start);
+                if let Some(n) = next { return n.compare(state) }
+                CompareResult::Match(0)
             },
         }
+    }
+
+    fn handle_next(&self) -> bool {
+        true
     }
 }
 
@@ -84,10 +114,38 @@ impl fmt::Display for Quantifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         try!(write!(f, "{}", self.quantified));
         match self.quantification {
-            Quantification::Greedy => try!(write!(f, "+")),
-            Quantification::NonGreedy => try!(write!(f, "-")),
-            Quantification::Optional => try!(write!(f, "?")),
+            Quantification::Greedy => write!(f, "+"),
+            Quantification::NonGreedy => write!(f, "-"),
+            Quantification::Optional => write!(f, "?"),
         }
-        write!(f, "{}", self.next)
+    }
+}
+
+// NextHack: DON'T DO THIS!
+
+struct NextHack<'a> {
+    quantification: Quantification,
+    quantified: &'a PatternElement,
+}
+
+impl<'a> NextHack<'a> {
+    fn new(q: &'a Quantifier) -> NextHack<'a> {
+        NextHack { quantification: q.quantification, quantified: &*q.quantified }
+    }
+}
+
+impl<'a> PatternElement for NextHack<'a> {
+    fn compare_next(&self, state: &mut MatchState, next: Option<&Next>) -> CompareResult {
+        CompareResult::Match(0)
+    }
+
+    fn handle_next(&self) -> bool {
+        true
+    }
+}
+
+impl<'a> fmt::Display for NextHack<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", "[Quantifier hack cannot be printed, as it is not part of a pattern.]")
     }
 }
